@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="false">
+	<!--定义日志文件的存储地址 -->
+	<property name="LOG_HOME" value="../logs" />
+
+	<!--<property name="COLOR_PATTERN" value="%black(%contextName-) %red(%d{yyyy-MM-dd HH:mm:ss}) %green([%thread]) %highlight(%-5level) %boldMagenta( %replace(%caller{1}){'\t|Caller.{1}0|\r\n', ''})- %gray(%msg%xEx%n)" />-->
+	<!-- 控制台输出 -->
+	<appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+			<!--格式化输出：%d表示日期，%thread表示线程名，%-5level：级别从左显示5个字符宽度%msg：日志消息，%n是换行符
+			<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50}:%L - %msg%n</pattern>-->
+			<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{50}:%L) - %msg%n</pattern>
+		</encoder>
+	</appender>
+
+	<!--
+		文件日志说明:开发环境默认不输出文件日志(仅控制台)。
+		如需输出文件日志,请参考 JeecgBoot 官方模板在此处补充 FILE/HTML/FILE_HTML appender 定义,
+		并在下方 <root> 内添加对应的 <appender-ref>。
+		注意:Spring Boot 4 不允许 <springProfile> 嵌套在 <root>/<logger>/<appender> 元素内部。
+	-->
+
+	<!--myibatis log configure -->
+	<logger name="com.apache.ibatis" level="TRACE" />
+	<logger name="java.sql.Connection" level="DEBUG" />
+	<logger name="java.sql.Statement" level="DEBUG" />
+	<logger name="java.sql.PreparedStatement" level="DEBUG" />
+
+	<!-- LiteFlow 2.15 的 auto-config 在容器增强前即被实例化,Spring 每次启动都会输出一条
+	“Cannot enhance @Configuration bean definition” 的 WARN,属第三方框架内部实现,不影响功能,
+	此处将该 logger 提升到 ERROR 级别以屏蔽该确定性噪音 -->
+	<logger name="org.springframework.context.annotation.ConfigurationClassPostProcessor" level="ERROR" />
+
+	<!-- 日志输出级别 -->
+	<root level="INFO">
+		<appender-ref ref="STDOUT" />
+	</root>
+
+</configuration>
