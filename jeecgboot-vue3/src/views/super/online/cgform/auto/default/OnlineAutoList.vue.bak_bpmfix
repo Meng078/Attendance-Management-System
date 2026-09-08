@@ -183,6 +183,7 @@
     <online-pop-modal ref="onlinePopModalRef" :id="popTableId" @register="registerPopModal" @success="reload" request topTip></online-pop-modal>
 
     <!-- 流程图查看modal -->
+    <BpmGraphicModal @register="registerBpmModal"></BpmGraphicModal>
     <!-- 页面loading[主要为了js增强使用] -->
     <Loading :loading="pageLoading" :absolute="true" />
   </div>

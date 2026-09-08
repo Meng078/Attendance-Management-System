@@ -1,5 +1,5 @@
 <template>
-  <div :class="['p-2', `online-list-${ID}`]">
+  <div class="p-2">
 
     <!-- 加载中骨架屏 -->
     <a-skeleton v-if="tableReloading" active />
@@ -15,10 +15,14 @@
         @loaded="onQueryFormLoaded"
     />
 
-    <!-- 列表 -->
+    <!-- 列表-树形列表前五个配置不一样【树】 -->
     <BasicTable
       v-if="!tableReloading"
-      ref="onlineTable"
+      ref="onlineTreeTableRef"
+      :isTreeTable="true"
+      :expandedRowKeys="expandedRowKeys"
+      @expandedRowsChange="handleExpandedRowsChange"
+      @expand="handleExpand"
       rowKey="jeecg_row_key"
       :canResize="true"
       :bordered="true"
@@ -57,25 +61,11 @@
             v-if="buttonSwitch.export && cgBIBtnMap['export'].enabled"
             type="primary"
             :preIcon="cgBIBtnMap['export'].buttonIcon"
-            :loading="exportLoading"
-            @click="onExportExcelOverride"
+            @click="onExportExcel"
         >
           <span>{{cgBIBtnMap['export'].buttonName}}</span>
         </a-button>
-        <!-- update-begin--author:liaozhiyang---date:20250403---for：【QQYUN-11801】生成测试数据 -->
-        <a-tooltip
-          v-if="!isConfigCurRoute && (tableType == 1 || tableType == 2) && buttonSwitch.aigc_mock_data && cgBIBtnMap['aigc_mock_data']?.enabled && dataSource.length == 0 && !loading"
-          :open="false"
-          placement="bottom"
-        >
-          <template #title>
-            <span>当有数据时或生成测试数据后该按钮会隐藏</span>
-          </template>
-          <a-button preIcon="mdi:robot-love-outline" :loading="testDataLoading" @click="handleAddTestData(currentTableName, reload)">
-            {{ cgBIBtnMap['aigc_mock_data'].buttonName }}
-          </a-button>
-        </a-tooltip>
-        <!-- update-end--author:liaozhiyang---date:20250403---for：【QQYUN-11801】生成测试数据 -->
+
         <!-- 自定义按钮 -->
         <template v-if="cgTopButtonList && cgTopButtonList.length > 0" v-for="(item, index) in cgTopButtonList">
           <a-button
@@ -147,7 +137,7 @@
       </template>
 
       <template #action="{ record }">
-        <TableAction :actions="getActions(record)" :dropDownActions="getDropDownActions(record)" />
+        <TableAction :actions="getActions(record)" :dropDownActions="getTreeDropDownActions(record)" />
       </template>
     </BasicTable>
 
@@ -158,12 +148,9 @@
         :cgBIBtnMap="cgBIBtnMap"
         :buttonSwitch="buttonSwitch"
         :confirmBtnCfg="getFormConfirmButtonCfg"
-        @success="reload"
+        @success="handlerFormSuccess"
         @formConfig="handleFormConfig"
     />
-
-    <!-- 详情弹框 -->
-    <online-detail-modal :id="ID" @register="registerDetailModal"/>
 
     <!-- 导入 -->
     <JImportModal @register="registerImportModal" :url="importUrl()" @ok="reload" online></JImportModal>
@@ -176,6 +163,9 @@
     <!-- 自定义弹窗 -->
     <online-custom-modal @register="registerCustomModal" @success="reload" />
 
+    <!-- 详情弹框 -->
+    <online-detail-modal :id="ID" @register="registerDetailModal"/>
+
     <!-- 弹窗给href到另外一张表单用-详情表单 -->
     <online-detail-modal :id="hrefMainTableId" @register="registerOnlineHrefModal" :defaultFullscreen="false"/>
 
@@ -183,35 +173,36 @@
     <online-pop-modal ref="onlinePopModalRef" :id="popTableId" @register="registerPopModal" @success="reload" request topTip></online-pop-modal>
 
     <!-- 流程图查看modal -->
+    <BpmGraphicModal @register="registerBpmModal"></BpmGraphicModal>
     <!-- 页面loading[主要为了js增强使用] -->
     <Loading :loading="pageLoading" :absolute="true" />
   </div>
 </template>
 
 <script lang="ts">
-  import { ref } from 'vue'
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import OnlineAutoModal from './OnlineAutoModal.vue';
-  import OnlineCustomModal from './OnlineCustomModal.vue';
-  import OnlineDetailModal from './OnlineDetailModal.vue'
-  import { watch } from 'vue';
+  import OnlineAutoModal from '../default/OnlineAutoModal.vue';
+  import OnlineDetailModal from '../default/OnlineDetailModal.vue';
+  import OnlineCustomModal from '../default/OnlineCustomModal.vue';
+  import { ref, watch } from 'vue';
   import JImportModal from '/@/components/Form/src/jeecg/components/JImportModal.vue';
   import { useOnlineTableContext } from '../../hooks/auto/useOnlineTableContext';
   import { useListButton } from '../../hooks/auto/useListButton';
   import { useTableColumns } from '../../hooks/auto/useTableColumns';
   import { useEnhance } from '../../hooks/auto/useEnhance';
+  import { defHttp } from '/@/utils/http/axios';
   import { getRefPromise } from '../../hooks/auto/useAutoForm';
   import OnlineQueryForm from '../comp/OnlineQueryForm.vue';
   import OnlineSuperQuery from '../comp/superquery/SuperQuery.vue';
-  import { useOnlineListPopEvent } from '../../hooks/auto/useOnlinePopEvent';
   import OnlinePopModal from '../comp/OnlinePopModal.vue';
-  import { NORMAL } from "../../util/constant";
+  import { useOnlineListPopEvent } from '../../hooks/auto/useOnlinePopEvent';
+  import { Tree } from "../../util/constant";
   import { Loading } from '/@/components/Loading';
   import { sanitizeRichText } from '/@/utils/htmlSanitizer';
 
   export default {
-    name: 'OnlineAutoList',
+    name: 'DefaultOnlineList',
     components: {
       BasicTable,
       TableAction,
@@ -226,9 +217,9 @@
     },
     setup() {
       const { createMessage: $message } = useMessage();
-      const currentTableName = ref('');
-      const tableType = ref('');
-      // 这行代码应该在每次进入新的路由都会走，不管该路由有没有被缓存--
+      const onlineTreeTableRef = ref();
+
+      // 树形列表增加了最后3个配置项【树】
       const {
         ID,
         onlineTableContext,
@@ -244,21 +235,25 @@
         superQueryButtonRef,
         superQueryStatus,
         handleSuperQuery,
+        registerCustomModal,
+        getTreeDataByResult,
+        expandedRowKeys,
+        handleExpandedRowsChange,
+        tableReloading,
         onlineExtConfigJson,
         handleFormConfig,
-        registerCustomModal,
-        tableReloading,
-        isConfigCurRoute,
         pageLoading,
       } = useOnlineTableContext();
 
-      // 判断 若ID不存在就终止后续逻辑
       if (!ID.value) {
         $message.warning('地址错误, 配置ID不存在!');
-        // update-end--author:liaozhiyang---date:20230825---for：【QQYUN-6326】部分代码找不到引用
+        // update-begin--author:liaozhiyang---date:20230825---for：【QQYUN-6326】部分代码找不到引用
         throw new Error('地址错误, 配置ID不存在!');
         // update-end--author:liaozhiyang---date:20230825---for：【QQYUN-6326】部分代码找不到引用
       }
+      // 树列表特定方法调用
+      onlineTableContext.isTree(true);
+
       // 处理增强
       let { initCgEnhanceJs } = useEnhance(onlineTableContext);
       // 处理列表button
@@ -275,9 +270,6 @@
         handleAdd,
         handleEdit,
         handleBatchDelete,
-        handleAddTestData,
-        testDataLoading,
-        testDataBtnShow,
         registerImportModal,
         onImportExcel,
         onExportExcel,
@@ -290,23 +282,10 @@
         initButtonList,
         initButtonSwitch,
         registerDetailModal,
-        registerBpmModal
+        registerBpmModal,
       } = useListButton(onlineTableContext, onlineExtConfigJson);
 
-      const exportLoading = ref(false)
-
-      // 重写导出方法，防止频繁点击
-      async function onExportExcelOverride() {
-        try {
-          exportLoading.value = true
-          await onExportExcel()
-        } finally {
-          // 防止频繁点击，延迟1.5s关闭loading
-          setTimeout(() => exportLoading.value = false, 1500)
-        }
-      }
-
-      // 处理 BasicTable 的配置
+      // 处理table的配置
       const {
         columns,
         actionColumn,
@@ -330,41 +309,21 @@
         handleClickFieldHref,
       } = useTableColumns(onlineTableContext, onlineExtConfigJson);
 
-      // 监听表单配置ID
       watch(
         ID,
         () => {
-          console.log('watched id is change...');
           initAutoList();
         },
         { immediate: true }
       );
 
-      /**重新加载online配置*/
       async function initAutoList() {
         loading.value = true;
         // 1.列配置信息
-        let columnResult: any = await getColumnList(NORMAL);
+        let columnResult = await getColumnList(Tree);
         handleTableConfig(columnResult);
-        // update-begin--author:liaozhiyang---date:20250403---for：【QQYUN-11801】生成测试数据
-        currentTableName.value = columnResult.currentTableName;
-        tableType.value = columnResult.tableType;
-        // update-end--author:liaozhiyang---date:20250403---for：【QQYUN-11801】生成测试数据
         // 2.加载数据
-        // update-begin--author:liaozhiyang---date:20260715---for：【LHZP-219】修复有默认值查询的场景下会调用两次接口，让只调用最后一次查询接口
-        let hasDefaultQuery = false;
-        try {
-          const queryForm = await getRefPromise(onlineQueryFormOuter);
-          if (queryForm && typeof queryForm.whenFirstQueryDecided === 'function') {
-            hasDefaultQuery = await queryForm.whenFirstQueryDecided();
-          }
-        } catch (e) {
-          hasDefaultQuery = false;
-        }
-        if (!hasDefaultQuery) {
-          await loadData();
-        }
-        // update-end--author:liaozhiyang---date:20260715---for：【LHZP-219】修复有默认值查询的场景下会调用两次接口，让只调用最后一次查询接口
+        await loadData();
         loading.value = false;
         // 3.执行js增强 setup
         onlineTableContext.execButtonEnhance('setup');
@@ -383,22 +342,30 @@
         handleColumnResult(result);
         // 表配置
         handleSpecialConfig(result);
+        //是否有子节点列-树列表特定【树】
+        onlineTableContext['hasChildrenField'] = result.hasChildrenField;
+        onlineTableContext['pidField'] = result.pidField;
       }
 
       /**
        * 查询控件 事件-执行查询
        * @param data
        */
-      function queryWithCondition(data) {
+      function queryWithCondition(data, status) {
         onlineTableContext['queryParam'] = data;
-        reload({mode:'search'});
+        if (status === true) {
+          // 正常查询
+          reload({mode:'search'});
+        } else {
+          //重置查询【树】
+          searchReset();
+        }
       }
 
       /**
        * 查询组件加载完成事件，获取高级查询需要的字段信息
        */
       async function onQueryFormLoaded(json) {
-        console.log('onQueryFormLoaded', json)
         await getRefPromise(superQueryButtonRef)
         superQueryButtonRef.value.init(json);
       }
@@ -407,21 +374,131 @@
        * list页面打开 其他表单弹窗
        * @param params
        */
-      function openOnlinePopModal(params){
-        console.log('openOnlinePopModal', params)
+      function openOnlinePopModal(params) {
+        console.log('openOnlinePopModal', params);
         popTableId.value = params.id;
         let data = {
-          title: params.describe
-        }
-        if(params.record && params.record.id){
-          data['record'] = params.record
+          title: params.describe,
+        };
+        if (params.record && params.record.id) {
+          data['record'] = params.record;
           data['isUpdate'] = true;
         }
         openPopModal(true, data);
       }
       //绑定弹窗事件
       useOnlineListPopEvent(openOnlinePopModal);
-      
+
+      /*-------------------------------以下方法是树列表专有的，或复写或新增-【树】----------------------------*/
+
+      // 展开节点调用
+      function handleExpand(expanded, record) {
+        // 判断是否是展开状态
+        let expandedRowKeysValue = expandedRowKeys.value;
+        if (expanded) {
+          addExpandedRowKey(record.id);
+          if (record.children.length > 0 && record.children[0].isLoading === true) {
+            let hasChildrenField = onlineTableContext.hasChildrenField;
+            const { sortField, sortType } = onlineTableContext;
+            let params = Object.assign({}, { column: sortField, order: sortType });
+            params[onlineTableContext['pidField']] = record.id;
+            params[hasChildrenField] = record[hasChildrenField];
+            let url = `${onlineTableContext.onlineUrl.getTreeData}${onlineTableContext.ID}`;
+            defHttp
+              .get({ url, params }, { isTransformResponse: false })
+              .then((res) => {
+                console.log('handleExpand', res.result);
+                if (res.success) {
+                  if (Number(res.result.total) > 0) {
+                    record.children = getTreeDataByResult(res.result.records);
+                    // dataSource.value =
+                  } else {
+                    record.children = '';
+                    record.hasChildrenField = '0';
+                  }
+                } else {
+                  $message.warning(res.message);
+                }
+              })
+              .catch(() => {
+                $message.warning('加载子节点失败!');
+              });
+          }
+        } else {
+          let keyIndex = expandedRowKeysValue.indexOf(record.id);
+          if (keyIndex >= 0) {
+            expandedRowKeys.value = expandedRowKeysValue.splice(keyIndex, 1);
+          }
+        }
+      }
+
+      /**
+       * 添加展开项的id
+       * */
+      function addExpandedRowKey(key) {
+        let arr = expandedRowKeys.value;
+        if (arr && arr.indexOf(key) < 0) {
+          arr.push(key);
+        }
+        expandedRowKeys.value = arr;
+      }
+
+      // 重置查询条件
+      async function searchReset() {
+        if (onlineTableContext.isTree() === true) {
+          expandedRowKeys.value = [];
+          onlineTreeTableRef.value.collapseAll();
+        }
+        reload();
+      }
+
+      /**
+       * 树表单新增、修改完成后 列表页面的回调事件
+       */
+      function handlerFormSuccess(formData) {
+        console.log('expandedRowKeys.value', expandedRowKeys.value);
+        if (loadParent.value === true) {
+          let pid = formData[onlineTableContext.pidField];
+          if (pid) {
+            let arr = expandedRowKeys.value;
+            if (arr.indexOf(pid) < 0) {
+              arr.push(pid);
+            }
+            expandedRowKeys.value = arr;
+          }
+        }
+        reload();
+      }
+
+      /**
+       *
+       * [更多]下拉项中的 [添加子节点]
+       */
+      const addChildButton = (record) => {
+        return {
+          label: '添加下级',
+          onClick: handleAddChild.bind(null, record),
+        };
+      };
+
+      const loadParent = ref(false);
+      function handleAddChild(record) {
+        loadParent.value = true;
+        let param = {
+          [onlineTableContext.pidField]: record['id'],
+        };
+        handleAdd(param);
+      }
+
+      /**
+       *  操作列[更多下拉项]
+       */
+      function getTreeDropDownActions(record) {
+        let arr = getDropDownActions(record, {'themeTemplate': Tree});
+        arr.unshift(addChildButton(record));
+        return arr;
+      }
+
       const that = {
         sanitizeRichText,
         ID,
@@ -439,9 +516,9 @@
         // table区域
         loading,
         columns,
+        actionColumn,
         dataSource,
         pagination,
-        actionColumn,
         rowSelection,
         selectedKeys,
         tableScroll,
@@ -454,8 +531,6 @@
         handleEdit,
         onImportExcel,
         onExportExcel,
-        exportLoading,
-        onExportExcelOverride,
         cgBIBtnMap,
         getQueryButtonCfg,
         getResetButtonCfg,
@@ -466,13 +541,6 @@
         cgButtonActionHandler,
         cgButtonLinkHandler,
         handleBatchDelete,
-        handleAddTestData,
-        testDataLoading,
-        testDataBtnShow,
-        currentTableName,
-        loadData,
-        tableType,
-        isConfigCurRoute,
 
         // table-slot
         downloadRowFile,
@@ -482,39 +550,53 @@
 
         // 操作列
         getActions,
-        getDropDownActions,
+        getTreeDropDownActions,
 
         // 弹窗
         registerModal,
         registerCustomModal,
         registerImportModal,
-        registerDetailModal,
         importUrl,
         handleFormConfig,
         onlinePopModalRef,
+        hrefMainTableId,
+        registerOnlineHrefModal,
+        registerPopModal,
+        popTableId,
 
         //其他
         tableReloading,
         handleSubmitFlow,
         hrefComponent,
         viewOnlineCellImage,
-        hrefMainTableId,
-        onlineExtConfigJson,
-        registerOnlineHrefModal,
-        registerPopModal,
-        popTableId,
-        registerBpmModal,
+
+        //树特定的配置
+        onlineTreeTableRef,
+        handlerFormSuccess,
+        searchReset,
+        handleExpand,
+        expandedRowKeys,
+        handleExpandedRowsChange,
+        registerDetailModal,
         handleClickFieldHref,
+        registerBpmModal,
+
         pageLoading,
       };
+      //useCompatibleOldVersion(that);
       return that;
     },
 
     // 1引入了loadsh   console.log(that.simpleDateFormat(new Date().getTime(),'yyyy-MM-dd'));
     // 2. value的问题
     // 3. 变量位置改变后需要 重写api
+
     // 1添加按钮的时候 预留出样式对象 然后js增强中设置样式对象
     // 2直接设置css字符串 然后通过js document 往head里面增加css片段 全局生效
+
+    // TODO 清空高级查询
+    // TODO 积木报表打印地址
+    // const reportPrintUrl = ref('')
   };
 </script>
 
@@ -535,6 +617,7 @@
       overflow-x: auto;
     }
   }
+
   .online-cell-image {
     height: 25px !important;
     margin: 0 auto;

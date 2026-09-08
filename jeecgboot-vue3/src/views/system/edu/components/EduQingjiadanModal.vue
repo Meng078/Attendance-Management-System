@@ -34,9 +34,18 @@
         isDetail.value = !!data?.showFooter;
         if (unref(isUpdate)) {
             //表单赋值
-            await setFieldsValue({
-                ...data.record,
+            const record = { ...data.record };
+            // 兼容旧数据：日期时间分隔符统一为横杠、缺秒补 ':00'，保证 DatePicker 正常回显
+            ['beginDate', 'endDate'].forEach((key) => {
+              const v = record[key];
+              if (v && typeof v === 'string') {
+                const m = v.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?$/);
+                if (m) {
+                  record[key] = m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] + ':' + (m[6] || '00');
+                }
+              }
             });
+            await setFieldsValue(record);
         }
         // 隐藏底部时禁用整个表单
        setProps({ disabled: !data?.showFooter })

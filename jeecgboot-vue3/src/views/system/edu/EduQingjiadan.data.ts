@@ -52,7 +52,16 @@ export const searchFormSchema: FormSchema[] = [
 	{
       label: "性别",
       field: 'sex',
-      component: 'Input',
+      component: 'Select',
+      componentProps: {
+        options: [
+          { label: '男', value: '男' },
+          { label: '女', value: '女' },
+          { label: '保密', value: '保密' },
+        ],
+        allowClear: true,
+        placeholder: '请选择性别',
+      },
       //colProps: {span: 6},
  	},
 ];
@@ -66,7 +75,14 @@ export const formSchema: FormSchema[] = [
   {
     label: '性别',
     field: 'sex',
-    component: 'Input',
+    component: 'RadioGroup',
+    componentProps: {
+      options: [
+        { label: '男', value: '男' },
+        { label: '女', value: '女' },
+        { label: '保密', value: '保密' },
+      ],
+    },
   },
   {
     label: '年龄',
@@ -81,12 +97,22 @@ export const formSchema: FormSchema[] = [
   {
     label: '开始时间',
     field: 'beginDate',
-    component: 'Input',
+    component: 'DatePicker',
+    componentProps: {
+      showTime: true,
+      format: 'YYYY-MM-DD HH:mm:ss',
+      valueFormat: 'YYYY-MM-DD HH:mm:ss',
+    },
   },
   {
     label: '结束时间',
     field: 'endDate',
-    component: 'Input',
+    component: 'DatePicker',
+    componentProps: {
+      showTime: true,
+      format: 'YYYY-MM-DD HH:mm:ss',
+      valueFormat: 'YYYY-MM-DD HH:mm:ss',
+    },
   },
   {
     label: '请假天数',
@@ -108,8 +134,8 @@ export const superQuerySchema = {
   sex: {title: '性别',order: 1,view: 'text', type: 'string',},
   age: {title: '年龄',order: 2,view: 'text', type: 'string',},
   remark: {title: '请假事由',order: 3,view: 'text', type: 'string',},
-  beginDate: {title: '开始时间',order: 4,view: 'text', type: 'string',},
-  endDate: {title: '结束时间',order: 5,view: 'text', type: 'string',},
+  beginDate: {title: '开始时间',order: 4,view: 'datetime', type: 'string',},
+  endDate: {title: '结束时间',order: 5,view: 'datetime', type: 'string',},
   days: {title: '请假天数',order: 6,view: 'text', type: 'string',},
 };
 

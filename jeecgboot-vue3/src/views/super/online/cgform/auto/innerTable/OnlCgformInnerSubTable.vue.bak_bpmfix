@@ -76,6 +76,7 @@
   <online-pop-modal ref="onlinePopModalRef" :id="popTableId" @register="registerPopModal" @success="reload" request topTip></online-pop-modal>
 
   <!-- 流程图查看modal -->
+  <BpmGraphicModal @register="registerBpmModal"></BpmGraphicModal>
 </template>
 
 <script setup name="OnlCgformInnerSubTable">
